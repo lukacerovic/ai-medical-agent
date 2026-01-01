@@ -1,0 +1,82 @@
+{
+  "cardiology_consultation": {
+    "id": "cardiology_consultation",
+    "name": "Cardiology Consultation",
+    "duration_minutes": 45,
+    "price_eur": 120,
+    "description": "Comprehensive heart and cardiovascular system evaluation",
+    "what_is_included": "Complete cardiac history, physical examination, ECG if needed, consultation with cardiologist",
+    "how_its_done": "Doctor will evaluate your cardiovascular health through clinical examination and discussion. Additional tests may be ordered based on findings.",
+    "special_preparation": "Wear comfortable clothing. Avoid caffeine 1 hour before appointment. Bring any previous ECG or cardiac reports."
+  },
+  "gastroenterology_consultation": {
+    "id": "gastroenterology_consultation",
+    "name": "Gastroenterology Consultation",
+    "duration_minutes": 45,
+    "price_eur": 110,
+    "description": "Evaluation of digestive system health",
+    "what_is_included": "Detailed digestive history, abdominal examination, discussion of symptoms, treatment recommendations",
+    "how_its_done": "The gastroenterologist will examine you and discuss your digestive health concerns. Tests may be recommended based on your symptoms.",
+    "special_preparation": "Light meal the night before. Avoid alcohol 24 hours before. Fast for 4 hours before appointment."
+  },
+  "abdominal_ultrasound": {
+    "id": "abdominal_ultrasound",
+    "name": "Abdominal Ultrasound",
+    "duration_minutes": 30,
+    "price_eur": 85,
+    "description": "Ultrasound imaging of abdominal organs",
+    "what_is_included": "Complete abdominal ultrasound with detailed images of liver, kidneys, pancreas, spleen, and other organs",
+    "how_its_done": "Painless ultrasound procedure using gel and probe. Takes about 30 minutes. Results explained during appointment.",
+    "special_preparation": "Fast 6-8 hours before appointment. Drink water to fill bladder. Wear loose, comfortable clothing."
+  },
+  "blood_analysis": {
+    "id": "blood_analysis",
+    "name": "Complete Blood Analysis",
+    "duration_minutes": 15,
+    "price_eur": 45,
+    "description": "Comprehensive blood work and analysis",
+    "what_is_included": "Blood collection, complete blood count (CBC), metabolic panel, lipid profile, liver and kidney function tests",
+    "how_its_done": "Blood sample drawn by phlebotomist. Lab analysis takes 24-48 hours. Results provided with physician consultation.",
+    "special_preparation": "Fasting recommended (8-12 hours). Come early in the morning. Drink plenty of water."
+  },
+  "dermatology_checkup": {
+    "id": "dermatology_checkup",
+    "name": "Dermatology Check-up",
+    "duration_minutes": 30,
+    "price_eur": 95,
+    "description": "Complete skin and dermatological evaluation",
+    "what_is_included": "Full skin examination, assessment of any skin conditions, skin type analysis, treatment recommendations",
+    "how_its_done": "Dermatologist will examine your skin visually and provide recommendations. Photos may be taken for record.",
+    "special_preparation": "Come with clean skin, no makeup. Avoid sun exposure 24 hours before. Wear comfortable, accessible clothing."
+  },
+  "general_checkup": {
+    "id": "general_checkup",
+    "name": "General Health Checkup",
+    "duration_minutes": 45,
+    "price_eur": 100,
+    "description": "Comprehensive general medical examination",
+    "what_is_included": "Full physical examination, vital signs, health history review, general health assessment",
+    "how_its_done": "Complete physical examination with general practitioner covering all major body systems.",
+    "special_preparation": "Wear comfortable clothing. Bring medical history if available. Come well-rested."
+  },
+  "orthopedic_consultation": {
+    "id": "orthopedic_consultation",
+    "name": "Orthopedic Consultation",
+    "duration_minutes": 40,
+    "price_eur": 105,
+    "description": "Bone, joint, and musculoskeletal system evaluation",
+    "what_is_included": "Assessment of joint and bone health, evaluation of pain or injury, movement assessment",
+    "how_its_done": "Orthopedist will examine the affected area, test range of motion, and provide treatment recommendations.",
+    "special_preparation": "Wear shorts or comfortable pants. Bring any X-rays or imaging results. Avoid strenuous activity before visit."
+  },
+  "thyroid_ultrasound": {
+    "id": "thyroid_ultrasound",
+    "name": "Thyroid Ultrasound",
+    "duration_minutes": 20,
+    "price_eur": 65,
+    "description": "Ultrasound imaging of the thyroid gland",
+    "what_is_included": "Complete thyroid ultrasound, assessment of gland size and structure",
+    "how_its_done": "Non-invasive ultrasound procedure. Gel applied to neck area. Detailed images captured and analyzed.",
+    "special_preparation": "No special preparation needed. Wear comfortable clothing with easy neck access."
+  }
+}

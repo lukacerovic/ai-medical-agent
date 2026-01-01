@@ -1,0 +1,33 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Node
+frontend/node_modules/
+frontend/.next/
+frontend/dist/
+frontend/build/
+
+# Models (users download these during setup)
+backend/app/data/models/
+*.pt
+*.bin
+*.onnx
+
+# Environment
+.env
+.env.local
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
