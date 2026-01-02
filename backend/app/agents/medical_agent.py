@@ -45,19 +45,59 @@ class MedicalAgent:
         """Load existing bookings"""
         try:
             with open(settings.data_dir / "bookings.json") as f:
-                return json.load(f)
+                content = f.read().strip()
+                if not content or content == "[]":
+                    return []
+                return json.loads(content)
         except Exception as e:
             print(f"⚠️ Warning: Could not load bookings.json: {e}")
             return []
     
     def _save_booking(self, booking: Dict):
-        """Save booking to file"""
+        """Save booking to file and update availability"""
+        print("\n" + "💾".repeat(40))
+        print("💾 SAVING BOOKING TO FILE")
+        print("💾".repeat(40))
+        
         self.bookings.append(booking)
+        
         try:
+            # Save booking
             with open(settings.data_dir / "bookings.json", "w") as f:
                 json.dump(self.bookings, f, indent=2)
+            print(f"✅ Booking saved: {booking['id']}")
+            print(f"📝 Service: {booking['service_name']}")
+            print(f"📅 Date: {booking['date']} at {booking['time']}")
+            print(f"👤 Patient: {booking['user_name']}")
+            
+            # Mark slot as unavailable
+            date = booking['date']
+            time = booking['time']
+            
+            if date in self.availability and time in self.availability[date]:
+                self.availability[date][time] = False
+                
+                # Save updated availability
+                with open(settings.data_dir / "availability.json", "w") as f:
+                    json.dump(self.availability, f, indent=2)
+                
+                print(f"✅ Slot marked as unavailable: {date} {time}")
+            
+            print("💾".repeat(40) + "\n")
+            
         except Exception as e:
-            print(f"Error saving booking: {e}")
+            print(f"❌ Error saving booking: {e}")
+            import traceback
+            traceback.print_exc()
+            print("💾".repeat(40) + "\n")
+    
+    def _save_availability(self):
+        """Save availability to file"""
+        try:
+            with open(settings.data_dir / "availability.json", "w") as f:
+                json.dump(self.availability, f, indent=2)
+        except Exception as e:
+            print(f"Error saving availability: {e}")
     
     async def process_user_input(self, session_id: str, user_input: str) -> str:
         """Process user input and generate appropriate response"""
@@ -141,7 +181,9 @@ class MedicalAgent:
         # Extract keywords from FULL conversation, not just current message
         keywords = ["heart", "cardio", "chest", "cardiac", "stomach", "gastro", 
                     "blood", "test", "ultrasound", "consultation", "appointment", 
-                    "book", "available", "slot", "time", "date", "schedule"]
+                    "book", "available", "slot", "time", "date", "schedule",
+                    "january", "february", "march", "april", "may", "june",
+                    "09:00", "10:00", "11:00", "14:00", "15:00", "16:00"]
         
         mentioned_keywords = [kw for kw in keywords if kw.lower() in full_context.lower()]
         
@@ -154,13 +196,28 @@ class MedicalAgent:
         elif "blood" in mentioned_keywords:
             service_category = "blood_test"
         
+        # 📅 EXTRACT DATE AND TIME from user input
+        date_match = self._extract_date(user_input)
+        time_match = self._extract_time(user_input)
+        
+        if date_match:
+            memory.update_extracted_info(session_id, "date", date_match)
+            print(f"📅 Extracted date: {date_match}")
+        
+        if time_match:
+            memory.update_extracted_info(session_id, "time", time_match)
+            print(f"⏰ Extracted time: {time_match}")
+        
         # Check what's already been discussed
         already_discussed = {
             "services_suggested": "cardiology consultation" in history.lower() or "€120" in history,
             "asked_about_slots": "available" in user_input.lower() and "slot" in user_input.lower(),
             "user_confirmed_service": any(phrase in user_input.lower() for phrase in ["i'd like", "yes", "book a consultation", "schedule"]),
             "assistant_already_listed_services": "cardiology consultation" in history.lower(),
-            "user_explicitly_asks_for_availability": "available" in user_input.lower() or "slot" in user_input.lower() or "when" in user_input.lower()
+            "user_explicitly_asks_for_availability": "available" in user_input.lower() or "slot" in user_input.lower() or "when" in user_input.lower(),
+            "dates_shown": any(date in history for date in self.availability.keys()),
+            "user_selected_date": date_match is not None,
+            "user_selected_time": time_match is not None
         }
         
         # Check booking stage
@@ -180,8 +237,70 @@ class MedicalAgent:
             "asks_about_availability": "available" in user_input.lower() or "slot" in user_input.lower() or "when" in user_input.lower(),
             "wants_to_book": any(kw in user_input.lower() for kw in ["book", "appointment", "schedule", "reserve", "i'd like", "yes"]),
             "already_discussed": already_discussed,
-            "conversation_history": history
+            "conversation_history": history,
+            "extracted_date": date_match,
+            "extracted_time": time_match
         }
+    
+    def _extract_date(self, text: str) -> Optional[str]:
+        """Extract date from text (format: YYYY-MM-DD)"""
+        # Check if date exists in availability
+        for date_key in self.availability.keys():
+            if date_key.lower() in text.lower():
+                return date_key
+        
+        # Try to match patterns like "January 6" or "Jan 6"
+        month_map = {
+            "january": "01", "jan": "01",
+            "february": "02", "feb": "02",
+            "march": "03", "mar": "03",
+            "april": "04", "apr": "04",
+            "may": "05",
+            "june": "06", "jun": "06"
+        }
+        
+        text_lower = text.lower()
+        for month_name, month_num in month_map.items():
+            if month_name in text_lower:
+                # Extract day number
+                import re
+                day_match = re.search(rf"{month_name}\s+(\d{{1,2}})", text_lower)
+                if day_match:
+                    day = day_match.group(1).zfill(2)
+                    potential_date = f"2025-{month_num}-{day}"
+                    # Check if this date exists in availability
+                    if potential_date in self.availability:
+                        return potential_date
+        
+        return None
+    
+    def _extract_time(self, text: str) -> Optional[str]:
+        """Extract time from text (format: HH:MM)"""
+        import re
+        
+        # Match patterns like "10:00", "10 AM", "10:30"
+        time_patterns = [
+            r"(\d{1,2}:\d{2})",  # 10:00
+            r"(\d{1,2})\s*(?:am|pm)",  # 10 AM
+            r"(\d{1,2})\s*o'?clock"  # 10 o'clock
+        ]
+        
+        for pattern in time_patterns:
+            match = re.search(pattern, text.lower())
+            if match:
+                time_str = match.group(1)
+                
+                # Convert to 24-hour format if needed
+                if ":" in time_str:
+                    return time_str
+                else:
+                    # Convert hour to HH:00 format
+                    hour = int(time_str)
+                    if "pm" in text.lower() and hour < 12:
+                        hour += 12
+                    return f"{hour:02d}:00"
+        
+        return None
     
     async def _handle_booking_intent(self, session_id: str, user_input: str, context: Dict) -> str:
         """Handle appointment booking with smart workflow and NO REPETITION"""
@@ -193,34 +312,102 @@ class MedicalAgent:
         print(f"   Already discussed: {context['already_discussed']}")
         print(f"   Extracted info: {session.extracted_info}")
         
+        # 🎯 STAGE: Date & Time selected - Ask for patient details
+        if (context["already_discussed"]["user_selected_date"] and 
+            context["already_discussed"]["user_selected_time"]):
+            
+            date = context["extracted_date"]
+            time = context["extracted_time"]
+            
+            # Validate availability
+            if not self.check_availability(date, time):
+                prompt = f"""You are Anna.
+
+Patient selected {date} at {time}, but that slot is no longer available.
+
+Apologize and show these available times for {date}:
+{', '.join(self.get_available_slots(date))}
+
+Keep response to 2 sentences."""
+                
+                response = await self.llm.generate(prompt, max_tokens=150)
+                return response
+            
+            # Slot is available - ask for patient details
+            print(f"✅ Slot {date} {time} is available!")
+            
+            prompt = f"""You are Anna confirming the appointment slot.
+
+Patient selected: {date} at {time}
+
+Say you've reserved that time and now need their:
+1. Full name
+2. Date of birth (for medical records)
+
+Be warm and friendly. Keep response to 2 sentences."""
+            
+            response = await self.llm.generate(prompt, max_tokens=150)
+            return response
+        
+        # 🎯 STAGE: User provided name and DOB - Confirm booking
+        if context["booking_stage"] == "ready_to_confirm":
+            print("➡️ STAGE: Confirming booking")
+            booking = self.create_booking(
+                session_id=session_id,
+                service_id=session.extracted_info["service_id"],
+                date=session.extracted_info["date"],
+                time=session.extracted_info["time"],
+                name=session.extracted_info["name"],
+                dob=session.extracted_info["dob"]
+            )
+            
+            prompt = f"""You are Anna confirming a booked appointment.
+
+Booking details:
+- Service: {booking['service_name']}
+- Date: {booking['date']}
+- Time: {booking['time']}
+- Price: €{booking['service_price']}
+
+Confirm the booking warmly and remind them to arrive 10 minutes early.
+Keep response to 2-3 sentences."""
+            
+            response = await self.llm.generate(prompt, max_tokens=150)
+            return response
+        
         # 🚫 CRITICAL: If user CONFIRMED service and asked for slots, SHOW AVAILABILITY
         if (context["already_discussed"]["user_confirmed_service"] and 
             context["already_discussed"]["user_explicitly_asks_for_availability"] and
-            context["already_discussed"]["services_suggested"]):
+            context["already_discussed"]["services_suggested"] and
+            not context["already_discussed"]["dates_shown"]):
             
             print("✅ User confirmed service AND asked for availability - showing slots!")
             
-            # Show available dates
-            available_dates = list(self.availability.keys())[:5]
-            date_list = "\n".join([f"- {date}" for date in available_dates])
+            # Show available dates with times
+            available_info = []
+            for date in list(self.availability.keys())[:3]:  # Show first 3 dates
+                slots = self.get_available_slots(date)
+                if slots:
+                    available_info.append(f"{date}: {', '.join(slots[:4])}")
+            
+            date_list = "\n".join(available_info)
             
             # Store selected service
             if not session.extracted_info.get("service_id"):
-                # Assume cardiology consultation based on context
                 memory.update_extracted_info(session_id, "service_id", "cardiology_consultation")
             
             prompt = f"""You are Anna helping book an appointment.
 
 Patient confirmed they want to book and asked: "{user_input}"
 
-Available dates:
+Available dates and times:
 {date_list}
 
-List these dates warmly and ask which one works best.
+List these options warmly and ask which date and time they prefer.
 DO NOT repeat service details they already know.
-Keep response to 2 sentences."""
+Keep response to 2-3 sentences."""
             
-            response = await self.llm.generate(prompt, max_tokens=150)
+            response = await self.llm.generate(prompt, max_tokens=200)
             return response
         
         # 🎯 STAGE 1: Service NOT discussed yet - Suggest services
@@ -245,78 +432,6 @@ Keep response to 2-3 sentences, warm and friendly."""
                 
                 response = await self.llm.generate(prompt, max_tokens=150)
                 return response
-        
-        # 🎯 STAGE 2: Services ALREADY discussed, user wants to book
-        if (context["already_discussed"]["services_suggested"] and 
-            context["wants_to_book"] and 
-            context["asks_about_availability"]):
-            
-            print("➡️ STAGE 2: Services already discussed, showing availability")
-            
-            # Show available slots
-            available_dates = list(self.availability.keys())[:5]
-            date_list = "\n".join([f"- {date}" for date in available_dates])
-            
-            # Store service selection
-            if not session.extracted_info.get("service_id"):
-                memory.update_extracted_info(session_id, "service_id", "cardiology_consultation")
-            
-            prompt = f"""You are Anna booking an appointment.
-
-Patient wants to book (they already know the service details).
-
-Available dates:
-{date_list}
-
-List these dates and ask which one they prefer.
-DO NOT repeat service information.
-Keep response to 2 sentences."""
-            
-            response = await self.llm.generate(prompt, max_tokens=150)
-            return response
-        
-        # 🎯 STAGE 3: Get patient details
-        if context["booking_stage"] == "datetime_selected":
-            print("➡️ STAGE 3: Getting patient details")
-            prompt = f"""You are Anna confirming appointment details.
-
-Patient has selected a date and time.
-
-Now ask for:
-1. Their full name
-2. Date of birth
-
-Be warm and explain we need this for their medical records.
-Keep response to 2 sentences."""
-            
-            response = await self.llm.generate(prompt, max_tokens=150)
-            return response
-        
-        # 🎯 STAGE 4: Confirm booking
-        if context["booking_stage"] == "ready_to_confirm":
-            print("➡️ STAGE 4: Confirming booking")
-            booking = self.create_booking(
-                session_id=session_id,
-                service_id=session.extracted_info["service_id"],
-                date=session.extracted_info["date"],
-                time=session.extracted_info["time"],
-                name=session.extracted_info["name"],
-                dob=session.extracted_info["dob"]
-            )
-            
-            prompt = f"""You are Anna confirming a booked appointment.
-
-Booking details:
-- Service: {booking['service_name']}
-- Date: {booking['date']}
-- Time: {booking['time']}
-- Price: €{booking['service_price']}
-
-Confirm the booking warmly and remind them to arrive 10 minutes early.
-Keep response to 2-3 sentences."""
-            
-            response = await self.llm.generate(prompt, max_tokens=150)
-            return response
         
         # Default: If they want to book but services not suggested yet
         if context["wants_to_book"] and not context["already_discussed"]["services_suggested"]:
@@ -521,12 +636,12 @@ Keep response to 2 sentences and be warm and professional."""
     
     def check_availability(self, date: str, time: str) -> bool:
         """Check if time slot is available"""
-        return self.availability.get(date, {}).get(time, True)
+        return self.availability.get(date, {}).get(time, False)
     
     def get_available_slots(self, date: str) -> list:
         """Get available time slots for a date"""
         slots = self.availability.get(date, {})
-        available = [slot for slot, available in slots.items() if available]
+        available = [slot for slot, is_available in slots.items() if is_available]
         return sorted(available)
     
     def create_booking(self, session_id: str, service_id: str, date: str, 
@@ -552,17 +667,4 @@ Keep response to 2 sentences and be warm and professional."""
         
         self._save_booking(booking)
         
-        # Mark slot as unavailable
-        if date in self.availability and time in self.availability[date]:
-            self.availability[date][time] = False
-            self._save_availability()
-        
         return booking
-    
-    def _save_availability(self):
-        """Save availability to file"""
-        try:
-            with open(settings.data_dir / "availability.json", "w") as f:
-                json.dump(self.availability, f, indent=2)
-        except Exception as e:
-            print(f"Error saving availability: {e}")
