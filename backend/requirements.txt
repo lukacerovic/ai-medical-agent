@@ -1,35 +1,35 @@
 # FastAPI and Web Framework
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-python-multipart==0.0.6
-python-jose[cryptography]==3.3.0
+fastapi
+uvicorn[standard]
+python-multipart
+python-jose[cryptography]
 
 # CrewAI Framework
-crewai==0.28.8
-crewai-tools==0.1.6
-langchain==0.1.20
-langchain-community==0.0.38
+crewai
+crewai-tools
+langchain
+langchain-community
 
 # LLM and AI
-openai==1.13.3
-openai-whisper==20231117
+openai
+openai-whisper
 
 # Audio Processing
-pyttsx3==2.90
-SpeechRecognition==3.10.0
-pyaudio==0.2.14
+pyttsx3
+SpeechRecognition
+pyaudio
 
 # Data Processing
-pandas==2.1.3
-numpy==1.26.2
-pydantic==2.5.2
-python-dotenv==1.0.0
+pandas
+numpy
+pydantic
+python-dotenv
 
 # Utilities
-requests==2.31.0
-python-dateutil==2.8.2
-aiofiles==23.2.1
+requests
+python-dateutil
+aiofiles
 
 # Database (optional, for future expansion)
-# sqlalchemy==2.0.23
-# alembic==1.13.0
+# sqlalchemy
+# alembic
