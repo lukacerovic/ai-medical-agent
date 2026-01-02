@@ -11,7 +11,7 @@ langchain==0.1.20
 langchain-community==0.0.38
 
 # LLM and AI
-opena==1.13.3
+openai==1.13.3
 openai-whisper==20231117
 
 # Audio Processing
