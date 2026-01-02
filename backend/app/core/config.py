@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     # Mistral
     mistral_local: bool = True
     mistral_api_url: str = "http://localhost:11434"
-    mistral_model: str = "mistral:instruct"
+    mistral_model: str = "mistral:latest"
     mistral_api_key: Optional[str] = None
     
     # FastAPI
