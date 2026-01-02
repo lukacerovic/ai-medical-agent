@@ -4,8 +4,8 @@ from pathlib import Path
 import os
 
 class Settings(BaseSettings):
-    # OpenAI
-    openai_api_key: str
+    # OpenAI - Optional (only needed if using OpenAI Whisper API)
+    openai_api_key: Optional[str] = None
     whisper_model: str = "base"
     
     # Mistral
@@ -28,5 +28,6 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = False
+        extra = "ignore"  # Ignore extra fields in .env
 
 settings = Settings()
