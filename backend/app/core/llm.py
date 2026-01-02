@@ -1,5 +1,6 @@
 import requests
 import json
+import re
 from typing import Dict, List, Any
 from app.core.config import settings
 
@@ -136,33 +137,79 @@ class MistralLLM:
     
     async def detect_intent(self, user_input: str) -> Dict[str, Any]:
         """Detect user intent from input"""
-        print(f"\n🎯 INTENT DETECTION")
-        print(f"   User input: {user_input}")
+        print(f"\n{'🎯'*40}")
+        print(f"🔍 INTENT DETECTION STARTED")
+        print(f"{'🎯'*40}")
+        print(f"📥 User input: {user_input}")
+        print()
         
-        prompt = f"""Analyze this patient message and extract the intent.
+        # Simplified prompt with clear examples
+        prompt = f"""Task: Identify the intent of this patient message.
 
-Patient message: "{user_input}"
+Patient says: "{user_input}"
 
-Respond ONLY with a JSON object (no markdown, no explanation):
-{{
-  "intent": "book_appointment|ask_about_service|describe_symptoms|ask_preparation|ask_price_duration|other",
-  "confidence": 0.0-1.0,
-  "entities": {{}}
-}}"""
+Respond with ONE of these intents:
+- book_appointment (if they want to schedule or book)
+- ask_about_service (if asking what services are available)
+- describe_symptoms (if describing health problems)
+- ask_preparation (if asking how to prepare for something)
+- ask_price_duration (if asking about cost or time)
+- other (anything else)
+
+Respond in this EXACT format:
+{{"intent": "book_appointment", "confidence": 0.9}}
+
+Your response:"""
         
-        response = await self.generate(prompt, max_tokens=200)
+        response = await self.generate(prompt, max_tokens=100)
         
-        print(f"\n   Raw intent response: {response[:200]}")
+        print(f"\n📤 Raw LLM response:")
+        print(f"   {response[:300]}")
+        print()
         
+        # Try to extract JSON from response
         try:
-            intent_data = json.loads(response)
-            print(f"   ✅ Intent parsed successfully: {intent_data.get('intent')}")
-            print(f"   Confidence: {intent_data.get('confidence')}")
-            return intent_data
-        except json.JSONDecodeError as e:
-            print(f"   ❌ JSON PARSE ERROR: {e}")
-            print(f"   Defaulting to 'other' intent")
-            return {"intent": "other", "confidence": 0.5, "entities": {}}
+            # Remove markdown code blocks if present
+            cleaned = response.strip()
+            if '```' in cleaned:
+                cleaned = re.sub(r'```json\s*|```\s*', '', cleaned)
+            
+            # Find JSON object
+            json_match = re.search(r'\{[^}]+\}', cleaned)
+            if json_match:
+                json_str = json_match.group(0)
+                intent_data = json.loads(json_str)
+                
+                # Validate intent
+                valid_intents = [
+                    "book_appointment", "ask_about_service", "describe_symptoms",
+                    "ask_preparation", "ask_price_duration", "other"
+                ]
+                
+                intent = intent_data.get('intent', 'other')
+                if intent not in valid_intents:
+                    print(f"   ⚠️ Invalid intent '{intent}', using 'other'")
+                    intent = 'other'
+                
+                confidence = float(intent_data.get('confidence', 0.5))
+                
+                result = {
+                    "intent": intent,
+                    "confidence": confidence,
+                    "entities": {}
+                }
+                
+                print(f"✅ INTENT DETECTED:")
+                print(f"   Intent: {result['intent']}")
+                print(f"   Confidence: {result['confidence']}")
+                print(f"{'🎯'*40}\n")
+                
+                return result
+            else:
+                raise ValueError("No JSON object found in response")
+                
         except Exception as e:
-            print(f"   ❌ Unexpected error: {e}")
+            print(f"❌ INTENT PARSE ERROR: {e}")
+            print(f"   Using fallback: 'other' intent")
+            print(f"{'🎯'*40}\n")
             return {"intent": "other", "confidence": 0.5, "entities": {}}
