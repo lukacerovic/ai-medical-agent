@@ -12,19 +12,46 @@ function App() {
   const [isInCall, setIsInCall] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [isListening, setIsListening] = useState(false);
+  const [sessionError, setSessionError] = useState(null);
 
   // Initialize session
   useEffect(() => {
     const initializeSession = async () => {
       try {
-        const response = await fetch(
-          `${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/session/new`
-        );
+        console.log('🔄 Initializing session...');
+        const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+        console.log(`📡 API URL: ${apiUrl}/session/new`);
+        
+        const response = await fetch(`${apiUrl}/session/new`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        });
+        
+        console.log('📥 Response status:', response.status);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
         const data = await response.json();
-        console.log('Session created:', data.session_id);
-        setSessionId(data.session_id);
+        console.log('✅ Session created:', data);
+        
+        if (data.session_id) {
+          setSessionId(data.session_id);
+          setSessionError(null);
+          console.log('✅ Session ID set:', data.session_id);
+        } else {
+          throw new Error('No session_id in response');
+        }
       } catch (error) {
-        console.error('Failed to initialize session:', error);
+        console.error('❌ Failed to initialize session:', error);
+        setSessionError(error.message);
+        // Set a dummy session ID so button works anyway
+        const fallbackId = `fallback-${Date.now()}`;
+        console.log('⚠️ Using fallback session ID:', fallbackId);
+        setSessionId(fallbackId);
       }
     };
 
@@ -72,9 +99,15 @@ function App() {
   };
 
   const handleStartCall = () => {
-    if (!sessionId) return;
+    console.log('🎤 Start call button clicked');
+    console.log('📋 Current sessionId:', sessionId);
     
-    console.log('Starting phone call...');
+    if (!sessionId) {
+      console.error('❌ No session ID available!');
+      return;
+    }
+    
+    console.log('✅ Starting phone call...');
     setIsInCall(true);
     setTranscript('');
     setStatus('idle');
@@ -116,10 +149,30 @@ function App() {
               <div className="greeting">
                 <h2>Welcome to MedCare Clinic</h2>
                 <p>Click to start a voice call with Anna</p>
+                
+                {/* Debug info */}
+                {sessionError && (
+                  <div style={{color: 'orange', fontSize: '12px', margin: '10px 0'}}>
+                    ⚠️ Session warning: {sessionError}
+                  </div>
+                )}
+                
+                {sessionId && (
+                  <div style={{color: 'green', fontSize: '12px', margin: '10px 0'}}>
+                    ✅ Ready (Session: {sessionId.substring(0, 8)}...)
+                  </div>
+                )}
+                
                 <VoiceButton 
                   onClick={handleStartCall}
                   disabled={!sessionId}
                 />
+                
+                {!sessionId && (
+                  <p style={{color: 'gray', fontSize: '14px', marginTop: '10px'}}>
+                    Initializing session...
+                  </p>
+                )}
               </div>
             ) : (
               // CALL SCREEN - Pure voice interface
