@@ -208,6 +208,18 @@ class MedicalAgent:
             memory.update_extracted_info(session_id, "time", time_match)
             print(f"⏰ Extracted time: {time_match}")
         
+        # 👤 EXTRACT NAME AND DOB from user input
+        name_match = self._extract_name(user_input, history)
+        dob_match = self._extract_dob(user_input)
+        
+        if name_match:
+            memory.update_extracted_info(session_id, "name", name_match)
+            print(f"👤 Extracted name: {name_match}")
+        
+        if dob_match:
+            memory.update_extracted_info(session_id, "dob", dob_match)
+            print(f"🎂 Extracted DOB: {dob_match}")
+        
         # Check what's already been discussed
         already_discussed = {
             "services_suggested": "cardiology consultation" in history.lower() or "€120" in history,
@@ -217,7 +229,10 @@ class MedicalAgent:
             "user_explicitly_asks_for_availability": "available" in user_input.lower() or "slot" in user_input.lower() or "when" in user_input.lower(),
             "dates_shown": any(date in history for date in self.availability.keys()),
             "user_selected_date": date_match is not None,
-            "user_selected_time": time_match is not None
+            "user_selected_time": time_match is not None,
+            "asked_for_patient_details": "full name" in history.lower() or "date of birth" in history.lower(),
+            "user_provided_name": name_match is not None,
+            "user_provided_dob": dob_match is not None
         }
         
         # Check booking stage
@@ -239,7 +254,9 @@ class MedicalAgent:
             "already_discussed": already_discussed,
             "conversation_history": history,
             "extracted_date": date_match,
-            "extracted_time": time_match
+            "extracted_time": time_match,
+            "extracted_name": name_match,
+            "extracted_dob": dob_match
         }
     
     def _extract_date(self, text: str) -> Optional[str]:
@@ -302,6 +319,87 @@ class MedicalAgent:
         
         return None
     
+    def _extract_name(self, text: str, history: str) -> Optional[str]:
+        """Extract full name from text"""
+        import re
+        
+        # Check if AI asked for name in previous message
+        if "full name" not in history.lower():
+            return None
+        
+        # Remove common phrases
+        text_clean = text.lower()
+        text_clean = re.sub(r"(my name is|i'm|i am|it's|name:)", "", text_clean).strip()
+        
+        # Match pattern: "FirstName LastName" (2-4 words, capitalized)
+        name_pattern = r"\b([A-Z][a-z]+(?: [A-Z][a-z]+){1,3})\b"
+        match = re.search(name_pattern, text)
+        
+        if match:
+            return match.group(1)
+        
+        # Fallback: Extract 2-3 consecutive words after cleaning
+        words = text_clean.split()
+        if 2 <= len(words) <= 4:
+            # Capitalize properly
+            return " ".join(word.capitalize() for word in words)
+        
+        return None
+    
+    def _extract_dob(self, text: str) -> Optional[str]:
+        """Extract date of birth from text (format: YYYY-MM-DD)"""
+        import re
+        
+        # Pattern 1: YYYY-MM-DD
+        pattern1 = r"(\d{4})[-/](\d{1,2})[-/](\d{1,2})"
+        match1 = re.search(pattern1, text)
+        if match1:
+            year, month, day = match1.groups()
+            return f"{year}-{month.zfill(2)}-{day.zfill(2)}"
+        
+        # Pattern 2: MM/DD/YYYY or DD/MM/YYYY
+        pattern2 = r"(\d{1,2})[-/](\d{1,2})[-/](\d{4})"
+        match2 = re.search(pattern2, text)
+        if match2:
+            first, second, year = match2.groups()
+            # Assume DD/MM/YYYY (European format)
+            return f"{year}-{second.zfill(2)}-{first.zfill(2)}"
+        
+        # Pattern 3: "15th May 1990" or "May 15, 1990"
+        month_map = {
+            "january": "01", "jan": "01",
+            "february": "02", "feb": "02",
+            "march": "03", "mar": "03",
+            "april": "04", "apr": "04",
+            "may": "05",
+            "june": "06", "jun": "06",
+            "july": "07", "jul": "07",
+            "august": "08", "aug": "08",
+            "september": "09", "sep": "09", "sept": "09",
+            "october": "10", "oct": "10",
+            "november": "11", "nov": "11",
+            "december": "12", "dec": "12"
+        }
+        
+        text_lower = text.lower()
+        for month_name, month_num in month_map.items():
+            if month_name in text_lower:
+                # Extract day and year
+                pattern = rf"(\d{{1,2}})(?:st|nd|rd|th)?\s*{month_name}\s*(\d{{4}})"
+                match = re.search(pattern, text_lower)
+                if match:
+                    day, year = match.groups()
+                    return f"{year}-{month_num}-{day.zfill(2)}"
+                
+                # Reverse: "May 15, 1990"
+                pattern2 = rf"{month_name}\s*(\d{{1,2}})(?:st|nd|rd|th)?,?\s*(\d{{4}})"
+                match2 = re.search(pattern2, text_lower)
+                if match2:
+                    day, year = match2.groups()
+                    return f"{year}-{month_num}-{day.zfill(2)}"
+        
+        return None
+    
     async def _handle_booking_intent(self, session_id: str, user_input: str, context: Dict) -> str:
         """Handle appointment booking with smart workflow and NO REPETITION"""
         print("\n📅 BOOKING INTENT HANDLER")
@@ -312,9 +410,37 @@ class MedicalAgent:
         print(f"   Already discussed: {context['already_discussed']}")
         print(f"   Extracted info: {session.extracted_info}")
         
+        # 🎯 STAGE: User provided name and DOB - Confirm booking
+        if context["booking_stage"] == "ready_to_confirm":
+            print("➡️ STAGE: Confirming booking")
+            booking = self.create_booking(
+                session_id=session_id,
+                service_id=session.extracted_info["service_id"],
+                date=session.extracted_info["date"],
+                time=session.extracted_info["time"],
+                name=session.extracted_info["name"],
+                dob=session.extracted_info["dob"]
+            )
+            
+            prompt = f"""You are Anna confirming a booked appointment.
+
+Booking details:
+- Service: {booking['service_name']}
+- Date: {booking['date']}
+- Time: {booking['time']}
+- Price: €{booking['service_price']}
+- Patient: {booking['user_name']}
+
+Confirm the booking warmly and remind them to arrive 10 minutes early.
+Keep response to 2-3 sentences."""
+            
+            response = await self.llm.generate(prompt, max_tokens=150)
+            return response
+        
         # 🎯 STAGE: Date & Time selected - Ask for patient details
         if (context["already_discussed"]["user_selected_date"] and 
-            context["already_discussed"]["user_selected_time"]):
+            context["already_discussed"]["user_selected_time"] and
+            not context["already_discussed"]["asked_for_patient_details"]):
             
             date = context["extracted_date"]
             time = context["extracted_time"]
@@ -345,32 +471,6 @@ Say you've reserved that time and now need their:
 2. Date of birth (for medical records)
 
 Be warm and friendly. Keep response to 2 sentences."""
-            
-            response = await self.llm.generate(prompt, max_tokens=150)
-            return response
-        
-        # 🎯 STAGE: User provided name and DOB - Confirm booking
-        if context["booking_stage"] == "ready_to_confirm":
-            print("➡️ STAGE: Confirming booking")
-            booking = self.create_booking(
-                session_id=session_id,
-                service_id=session.extracted_info["service_id"],
-                date=session.extracted_info["date"],
-                time=session.extracted_info["time"],
-                name=session.extracted_info["name"],
-                dob=session.extracted_info["dob"]
-            )
-            
-            prompt = f"""You are Anna confirming a booked appointment.
-
-Booking details:
-- Service: {booking['service_name']}
-- Date: {booking['date']}
-- Time: {booking['time']}
-- Price: €{booking['service_price']}
-
-Confirm the booking warmly and remind them to arrive 10 minutes early.
-Keep response to 2-3 sentences."""
             
             response = await self.llm.generate(prompt, max_tokens=150)
             return response
