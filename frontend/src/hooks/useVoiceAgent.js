@@ -5,12 +5,24 @@ const useVoiceAgent = (sessionId, onResponseReceived, onStatusChange) => {
   const audioChunksRef = useRef([]);
   const streamRef = useRef(null);
   const recordingTimerRef = useRef(null);
+  const vadTimerRef = useRef(null);
+  const audioContextRef = useRef(null);
+  const analyserRef = useRef(null);
   const [isRecording, setIsRecording] = useState(false);
+
+  // VAD Configuration
+  const VAD_CONFIG = {
+    SILENCE_THRESHOLD: 0.01,      // Volume threshold (0-1, lower = more sensitive)
+    SILENCE_DURATION: 1500,       // Milliseconds of silence before auto-stop (1.5 seconds)
+    MIN_SPEECH_DURATION: 500,     // Minimum milliseconds of speech before VAD activates
+    CHECK_INTERVAL: 100,          // How often to check audio level (ms)
+    MAX_RECORDING_TIME: 30000,    // Maximum recording time (30 seconds)
+  };
 
   const startVoiceCall = useCallback(async () => {
     try {
       console.log('\n' + '='.repeat(80));
-      console.log('🎤 [MIC] Starting microphone recording...');
+      console.log('🎤 [VAD] Starting Voice Activity Detection...');
       console.log('='.repeat(80));
       
       onStatusChange('listening');
@@ -20,96 +32,182 @@ const useVoiceAgent = (sessionId, onResponseReceived, onStatusChange) => {
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
-          autoGainControl: true
+          autoGainControl: true,
+          sampleRate: 16000
         } 
       });
       streamRef.current = stream;
-      console.log('✅ [MIC] Microphone access granted with echo cancellation');
+      console.log('✅ [VAD] Microphone access granted');
+
+      // Setup Audio Context for VAD
+      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      analyserRef.current = audioContextRef.current.createAnalyser();
+      const source = audioContextRef.current.createMediaStreamSource(stream);
+      source.connect(analyserRef.current);
+      analyserRef.current.fftSize = 512;
+      
+      console.log('✅ [VAD] Audio analyzer initialized');
+      console.log(`🎯 [VAD] Silence threshold: ${VAD_CONFIG.SILENCE_THRESHOLD}`);
+      console.log(`⏱️ [VAD] Auto-stop after ${VAD_CONFIG.SILENCE_DURATION}ms of silence`);
 
       // Create MediaRecorder
       mediaRecorderRef.current = new MediaRecorder(stream);
       audioChunksRef.current = [];
+      let speechStartTime = null;
+      let lastSpeechTime = Date.now();
 
       // Collect audio chunks
       mediaRecorderRef.current.ondataavailable = (e) => {
         if (e.data.size > 0) {
           audioChunksRef.current.push(e.data);
-          console.log(`📦 [MIC] Audio chunk received: ${e.data.size} bytes`);
+          console.log(`📦 [VAD] Audio chunk: ${e.data.size} bytes`);
         }
       };
 
       // When recording stops, send to backend
       mediaRecorderRef.current.onstop = async () => {
-        console.log('📎 [MIC] Recording stopped');
-        console.log(`📊 [MIC] Total chunks: ${audioChunksRef.current.length}`);
-        console.log('='.repeat(80) + '\n');
+        console.log('\n' + '-'.repeat(80));
+        console.log('📍 [VAD] Recording stopped');
+        console.log(`📊 [VAD] Total chunks: ${audioChunksRef.current.length}`);
+        console.log('-'.repeat(80) + '\n');
+        
+        // Clean up VAD timer
+        if (vadTimerRef.current) {
+          clearInterval(vadTimerRef.current);
+          vadTimerRef.current = null;
+        }
+        
+        // Clean up audio context
+        if (audioContextRef.current) {
+          audioContextRef.current.close();
+          audioContextRef.current = null;
+          analyserRef.current = null;
+        }
         
         if (audioChunksRef.current.length > 0) {
           const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
-          console.log(`🎵 [MIC] Audio blob size: ${audioBlob.size} bytes`);
+          console.log(`🎵 [VAD] Sending ${audioBlob.size} bytes to backend`);
           await sendAudioToBackend(audioBlob, sessionId, onStatusChange, onResponseReceived);
         } else {
-          console.warn('⚠️ [MIC] No audio chunks recorded!');
+          console.warn('⚠️ [VAD] No audio recorded!');
+          onStatusChange('idle');
         }
         
         // Clean up stream
         if (streamRef.current) {
           streamRef.current.getTracks().forEach(track => {
             track.stop();
-            console.log('🚫 [MIC] Microphone track stopped');
+            console.log('🚫 [VAD] Track stopped:', track.kind);
           });
           streamRef.current = null;
         }
       };
 
-      mediaRecorderRef.current.start();
+      // Start recording
+      mediaRecorderRef.current.start(100); // Collect data every 100ms
       setIsRecording(true);
-      console.log('▶️ [MIC] Recording started (30 second max)');
+      console.log('▶️ [VAD] Recording started');
       console.log('='.repeat(80) + '\n');
 
-      // EXTENDED: Auto-stop after 30 seconds (was 10)
+      // 🎯 SMART VAD: Monitor audio levels
+      vadTimerRef.current = setInterval(() => {
+        if (!analyserRef.current) return;
+
+        const bufferLength = analyserRef.current.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+        analyserRef.current.getByteFrequencyData(dataArray);
+
+        // Calculate average volume (0-1)
+        const average = dataArray.reduce((a, b) => a + b, 0) / bufferLength / 255;
+
+        const isSpeaking = average > VAD_CONFIG.SILENCE_THRESHOLD;
+
+        if (isSpeaking) {
+          if (!speechStartTime) {
+            speechStartTime = Date.now();
+            console.log('🗣️ [VAD] Speech detected!');
+          }
+          lastSpeechTime = Date.now();
+        } else {
+          // Check if we've had enough speech before checking for silence
+          const speechDuration = speechStartTime ? Date.now() - speechStartTime : 0;
+          
+          if (speechDuration >= VAD_CONFIG.MIN_SPEECH_DURATION) {
+            const silenceDuration = Date.now() - lastSpeechTime;
+            
+            if (silenceDuration >= VAD_CONFIG.SILENCE_DURATION) {
+              console.log('\n' + '🔴'.repeat(40));
+              console.log(`⏸️ [VAD] Silence detected for ${silenceDuration}ms - auto-stopping!`);
+              console.log('🔴'.repeat(40) + '\n');
+              
+              if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+                mediaRecorderRef.current.stop();
+                setIsRecording(false);
+              }
+            }
+          }
+        }
+
+        // Debug: Show volume level
+        if (Math.random() < 0.1) { // Log 10% of the time to avoid spam
+          console.log(`🔊 [VAD] Volume: ${(average * 100).toFixed(1)}% | Speaking: ${isSpeaking ? '✅' : '❌'}`);
+        }
+      }, VAD_CONFIG.CHECK_INTERVAL);
+
+      // Safety: Max recording time
       recordingTimerRef.current = setTimeout(() => {
-        console.log('\n' + '-'.repeat(80));
-        console.log('⏰ [MIC] 30 seconds elapsed - auto-stopping recording');
-        console.log('-'.repeat(80) + '\n');
+        console.log('\n' + '⚠️'.repeat(40));
+        console.log(`⏰ [VAD] Maximum recording time (${VAD_CONFIG.MAX_RECORDING_TIME / 1000}s) reached`);
+        console.log('⚠️'.repeat(40) + '\n');
         
         if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
           mediaRecorderRef.current.stop();
           setIsRecording(false);
         }
-      }, 30000); // 30 seconds
+      }, VAD_CONFIG.MAX_RECORDING_TIME);
 
     } catch (error) {
       console.error('\n' + '!'.repeat(80));
-      console.error('❌ [MIC ERROR] Microphone error:', error);
+      console.error('❌ [VAD ERROR] Microphone error:', error);
       console.error('!'.repeat(80) + '\n');
       onStatusChange('error');
     }
-  }, [sessionId, onStatusChange, onResponseReceived]);
+  }, [sessionId, onStatusChange, onResponseReceived, VAD_CONFIG]);
 
   const stopVoiceCall = useCallback(() => {
     console.log('\n' + '-'.repeat(80));
-    console.log('🛑 [MIC] Manually stopping voice call...');
+    console.log('🛑 [VAD] Manually stopping recording...');
     
-    // Clear timer
+    // Clear timers
     if (recordingTimerRef.current) {
       clearTimeout(recordingTimerRef.current);
       recordingTimerRef.current = null;
-      console.log('✅ [MIC] Recording timer cleared');
+    }
+    
+    if (vadTimerRef.current) {
+      clearInterval(vadTimerRef.current);
+      vadTimerRef.current = null;
     }
     
     // Stop recording
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
-      console.log('✅ [MIC] MediaRecorder stopped');
+      console.log('✅ [VAD] Recording stopped');
+    }
+    
+    // Clean up audio context
+    if (audioContextRef.current) {
+      audioContextRef.current.close();
+      audioContextRef.current = null;
+      analyserRef.current = null;
     }
     
     // Stop all tracks
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => {
         track.stop();
-        console.log('🚫 [MIC] Track stopped:', track.kind);
+        console.log('🚫 [VAD] Track stopped:', track.kind);
       });
       streamRef.current = null;
     }
@@ -148,20 +246,19 @@ const sendAudioToBackend = async (audioBlob, sessionId, onStatusChange, onRespon
     );
 
     const data = await response.json();
-    console.log(`📝 [BACKEND] Transcription received: "${data.text}"`);
+    console.log(`📝 [BACKEND] Transcription: "${data.text}"`);
     console.log('='.repeat(80) + '\n');
 
     if (data.text && data.text.trim().length > 0) {
-      // Got transcription, now send as text message
       await sendTextMessage(data.text, sessionId, onStatusChange, onResponseReceived);
     } else {
-      console.warn('⚠️ [BACKEND] Empty transcription received');
+      console.warn('⚠️ [BACKEND] Empty transcription');
       onStatusChange('idle');
     }
 
   } catch (error) {
     console.error('\n' + '!'.repeat(80));
-    console.error('❌ [BACKEND ERROR] Audio send error:', error);
+    console.error('❌ [BACKEND ERROR]:', error);
     console.error('!'.repeat(80) + '\n');
     onStatusChange('error');
   }
@@ -170,10 +267,9 @@ const sendAudioToBackend = async (audioBlob, sessionId, onStatusChange, onRespon
 const sendTextMessage = async (text, sessionId, onStatusChange, onResponseReceived) => {
   try {
     console.log('\n' + '='.repeat(80));
-    console.log('💬 [CHAT] Sending text to AI...');
+    console.log('💬 [CHAT] Sending to AI...');
     console.log('='.repeat(80));
-    console.log(`📝 [CHAT] User message: "${text}"`);
-    console.log(`🎫 [CHAT] Session ID: ${sessionId}`);
+    console.log(`📝 [CHAT] Message: "${text}"`);
     
     const response = await fetch(
       `${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/chat`,
@@ -185,20 +281,18 @@ const sendTextMessage = async (text, sessionId, onStatusChange, onResponseReceiv
     );
 
     const data = await response.json();
-    console.log(`🤖 [CHAT] AI response received: "${data.assistant_response}"`);
+    console.log(`🤖 [CHAT] AI: "${data.assistant_response}"`);
     console.log('='.repeat(80) + '\n');
 
     if (data.assistant_response) {
-      // CRITICAL: Only call onResponseReceived - App.js handles TTS
-      // DO NOT play audio here - it causes duplication!
-      console.log('✅ [CHAT] Passing response to App.js (App.js will handle TTS)');
+      console.log('✅ [CHAT] Passing to App.js for TTS');
       onResponseReceived(data.assistant_response);
       onStatusChange('idle');
     }
 
   } catch (error) {
     console.error('\n' + '!'.repeat(80));
-    console.error('❌ [CHAT ERROR] Chat error:', error);
+    console.error('❌ [CHAT ERROR]:', error);
     console.error('!'.repeat(80) + '\n');
     onStatusChange('error');
   }
