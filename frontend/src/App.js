@@ -185,6 +185,21 @@ function App() {
     console.log('!'.repeat(80) + '\n');
   };
 
+  // ✨ NEW: Stop listening manually (for VAD)
+  const handleStopListening = () => {
+    console.log('\n' + '■'.repeat(80));
+    console.log('⏸️ [MANUAL STOP] User manually stopped listening');
+    console.log('■'.repeat(80));
+    
+    stopVoiceCall();
+    setIsListening(false);
+    setStatus('thinking');
+    
+    console.log('✅ [MANUAL STOP] Voice recording stopped');
+    console.log('🔄 [MANUAL STOP] Processing audio...');
+    console.log('■'.repeat(80) + '\n');
+  };
+
   return (
     <div className="app">
       <div className="container">
@@ -290,14 +305,49 @@ function App() {
                   {/* Status message */}
                   <div className="status-message">
                     {status === 'listening' && <p>🎤 Listening...</p>}
-                    {status === 'thinking' && <p>⏳ Processing...</p>}
+                    {status === 'thinking' && <p>⌛ Processing...</p>}
                     {status === 'speaking' && <p>🔊 Speaking...</p>}
                     {status === 'idle' && <p>Ready to listen...</p>}
                   </div>
                 </div>
 
-                {/* Footer - End call button */}
+                {/* Footer - End Listening & End Call buttons */}
                 <div className="call-footer">
+                  {/* ✨ NEW: Stop Listening Button (only when listening) */}
+                  {isListening && (
+                    <button 
+                      className="btn-stop-listening"
+                      onClick={handleStopListening}
+                      style={{
+                        backgroundColor: '#ff9800',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '25px',
+                        padding: '12px 24px',
+                        fontSize: '16px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        marginRight: '12px',
+                        boxShadow: '0 2px 8px rgba(255, 152, 0, 0.3)',
+                        transition: 'all 0.2s ease',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '8px'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.target.style.transform = 'scale(1.05)';
+                        e.target.style.boxShadow = '0 4px 12px rgba(255, 152, 0, 0.4)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.target.style.transform = 'scale(1)';
+                        e.target.style.boxShadow = '0 2px 8px rgba(255, 152, 0, 0.3)';
+                      }}
+                    >
+                      <span>⏸️</span>
+                      <span>Stop Listening</span>
+                    </button>
+                  )}
+                  
                   <button 
                     className="btn-end-call"
                     onClick={handleEndCall}
