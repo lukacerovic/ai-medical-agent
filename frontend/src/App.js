@@ -122,18 +122,64 @@ function App() {
   };
 
   const handleEndCall = () => {
-    console.log('Ending call');
+    console.log('🛑 EMERGENCY STOP: Killing conversation');
+    
+    // Stop all voice processing
     stopVoiceCall();
+    
+    // Cancel any ongoing speech
+    window.speechSynthesis.cancel();
+    
+    // Reset all states
     setIsInCall(false);
     setTranscript('');
     setStatus('idle');
     setIsListening(false);
-    window.speechSynthesis.cancel();
+    
+    console.log('✅ Conversation terminated');
   };
 
   return (
     <div className="app">
       <div className="container">
+        {/* EMERGENCY KILL BUTTON - Always visible */}
+        {isInCall && (
+          <button 
+            className="emergency-kill-btn"
+            onClick={handleEndCall}
+            title="Emergency Stop"
+            style={{
+              position: 'fixed',
+              top: '20px',
+              right: '20px',
+              zIndex: 9999,
+              backgroundColor: '#dc3545',
+              color: 'white',
+              border: 'none',
+              borderRadius: '50%',
+              width: '60px',
+              height: '60px',
+              fontSize: '24px',
+              cursor: 'pointer',
+              boxShadow: '0 4px 12px rgba(220, 53, 69, 0.4)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'all 0.2s ease'
+            }}
+            onMouseEnter={(e) => {
+              e.target.style.transform = 'scale(1.1)';
+              e.target.style.boxShadow = '0 6px 16px rgba(220, 53, 69, 0.6)';
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.transform = 'scale(1)';
+              e.target.style.boxShadow = '0 4px 12px rgba(220, 53, 69, 0.4)';
+            }}
+          >
+            🛑
+          </button>
+        )}
+
         <header className="header">
           <div className="logo">
             <span className="icon">🏥</span>
