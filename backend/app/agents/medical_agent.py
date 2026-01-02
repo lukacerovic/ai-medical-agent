@@ -1,5 +1,6 @@
 import json
-from typing import Dict, Any, Optional, Tuple
+import re
+from typing import Dict, Any, Optional, Tuple, List
 from datetime import datetime, timedelta
 from app.core.llm import MistralLLM
 from app.core.memory import memory
@@ -83,7 +84,7 @@ class MedicalAgent:
         
         memory.set_current_intent(session_id, intent)
         
-        # 📌 EXTRACT CONTEXT FROM CONVERSATION
+        # 📌 EXTRACT CONTEXT FROM FULL CONVERSATION HISTORY
         print(f"\n📊 ANALYZING CONVERSATION CONTEXT...")
         context = await self._analyze_context(session_id, user_input)
         print(f"✅ Context extracted: {json.dumps(context, indent=2)}")
@@ -126,18 +127,25 @@ class MedicalAgent:
         return response
     
     async def _analyze_context(self, session_id: str, user_input: str) -> Dict[str, Any]:
-        """Analyze conversation context and extract structured information"""
+        """Analyze FULL conversation context and extract structured information"""
         session = memory.get_session(session_id)
         history = memory.get_conversation_history(session_id)
         
-        # Extract keywords
+        print(f"📋 FULL CONVERSATION HISTORY:")
+        print(f"{history}")
+        print(f"-" * 80)
+        
+        # Combine current input with full history
+        full_context = history + f"Patient: {user_input}\n"
+        
+        # Extract keywords from FULL conversation, not just current message
         keywords = ["heart", "cardio", "chest", "cardiac", "stomach", "gastro", 
                     "blood", "test", "ultrasound", "consultation", "appointment", 
-                    "book", "available", "slot", "time", "date"]
+                    "book", "available", "slot", "time", "date", "schedule"]
         
-        mentioned_keywords = [kw for kw in keywords if kw.lower() in user_input.lower() or kw.lower() in history.lower()]
+        mentioned_keywords = [kw for kw in keywords if kw.lower() in full_context.lower()]
         
-        # Identify mentioned service category
+        # Identify mentioned service category from FULL history
         service_category = None
         if any(kw in mentioned_keywords for kw in ["heart", "cardio", "chest", "cardiac"]):
             service_category = "cardiology"
@@ -145,6 +153,15 @@ class MedicalAgent:
             service_category = "gastroenterology"
         elif "blood" in mentioned_keywords:
             service_category = "blood_test"
+        
+        # Check what's already been discussed
+        already_discussed = {
+            "services_suggested": "cardiology consultation" in history.lower() or "€120" in history,
+            "asked_about_slots": "available" in user_input.lower() and "slot" in user_input.lower(),
+            "user_confirmed_service": any(phrase in user_input.lower() for phrase in ["i'd like", "yes", "book a consultation", "schedule"]),
+            "assistant_already_listed_services": "cardiology consultation" in history.lower(),
+            "user_explicitly_asks_for_availability": "available" in user_input.lower() or "slot" in user_input.lower() or "when" in user_input.lower()
+        }
         
         # Check booking stage
         booking_stage = "initial"
@@ -160,23 +177,55 @@ class MedicalAgent:
             "mentioned_keywords": mentioned_keywords,
             "booking_stage": booking_stage,
             "has_symptom_description": any(kw in mentioned_keywords for kw in ["heart", "stomach", "pain", "problem"]),
-            "asks_about_availability": any(kw in mentioned_keywords for kw in ["available", "slot", "time", "when"]),
-            "wants_to_book": any(kw in mentioned_keywords for kw in ["book", "appointment", "schedule", "reserve"])
+            "asks_about_availability": "available" in user_input.lower() or "slot" in user_input.lower() or "when" in user_input.lower(),
+            "wants_to_book": any(kw in user_input.lower() for kw in ["book", "appointment", "schedule", "reserve", "i'd like", "yes"]),
+            "already_discussed": already_discussed,
+            "conversation_history": history
         }
     
     async def _handle_booking_intent(self, session_id: str, user_input: str, context: Dict) -> str:
-        """Handle appointment booking with smart workflow"""
+        """Handle appointment booking with smart workflow and NO REPETITION"""
         print("\n📅 BOOKING INTENT HANDLER")
         session = memory.get_session(session_id)
-        history = memory.get_conversation_history(session_id)
         
         print(f"   Booking stage: {context['booking_stage']}")
         print(f"   Service category: {context['service_category']}")
+        print(f"   Already discussed: {context['already_discussed']}")
         print(f"   Extracted info: {session.extracted_info}")
         
-        # 🎯 STAGE 1: Identify service
-        if not session.extracted_info.get("service_id") and context["service_category"]:
-            # Suggest relevant services
+        # 🚫 CRITICAL: If user CONFIRMED service and asked for slots, SHOW AVAILABILITY
+        if (context["already_discussed"]["user_confirmed_service"] and 
+            context["already_discussed"]["user_explicitly_asks_for_availability"] and
+            context["already_discussed"]["services_suggested"]):
+            
+            print("✅ User confirmed service AND asked for availability - showing slots!")
+            
+            # Show available dates
+            available_dates = list(self.availability.keys())[:5]
+            date_list = "\n".join([f"- {date}" for date in available_dates])
+            
+            # Store selected service
+            if not session.extracted_info.get("service_id"):
+                # Assume cardiology consultation based on context
+                memory.update_extracted_info(session_id, "service_id", "cardiology_consultation")
+            
+            prompt = f"""You are Anna helping book an appointment.
+
+Patient confirmed they want to book and asked: "{user_input}"
+
+Available dates:
+{date_list}
+
+List these dates warmly and ask which one works best.
+DO NOT repeat service details they already know.
+Keep response to 2 sentences."""
+            
+            response = await self.llm.generate(prompt, max_tokens=150)
+            return response
+        
+        # 🎯 STAGE 1: Service NOT discussed yet - Suggest services
+        if not context["already_discussed"]["assistant_already_listed_services"] and context["service_category"]:
+            print("➡️ STAGE 1: Suggesting services for first time")
             relevant_services = self._get_services_by_category(context["service_category"])
             
             if relevant_services:
@@ -197,27 +246,38 @@ Keep response to 2-3 sentences, warm and friendly."""
                 response = await self.llm.generate(prompt, max_tokens=150)
                 return response
         
-        # 🎯 STAGE 2: Show availability
-        if session.extracted_info.get("service_id") and context["asks_about_availability"]:
+        # 🎯 STAGE 2: Services ALREADY discussed, user wants to book
+        if (context["already_discussed"]["services_suggested"] and 
+            context["wants_to_book"] and 
+            context["asks_about_availability"]):
+            
+            print("➡️ STAGE 2: Services already discussed, showing availability")
+            
             # Show available slots
             available_dates = list(self.availability.keys())[:5]
             date_list = "\n".join([f"- {date}" for date in available_dates])
             
-            prompt = f"""You are Anna helping book an appointment.
+            # Store service selection
+            if not session.extracted_info.get("service_id"):
+                memory.update_extracted_info(session_id, "service_id", "cardiology_consultation")
+            
+            prompt = f"""You are Anna booking an appointment.
 
-Patient wants to book a service and asked about availability.
+Patient wants to book (they already know the service details).
 
 Available dates:
 {date_list}
 
-List these dates warmly and ask which one works best for them.
-Keep response to 2-3 sentences."""
+List these dates and ask which one they prefer.
+DO NOT repeat service information.
+Keep response to 2 sentences."""
             
             response = await self.llm.generate(prompt, max_tokens=150)
             return response
         
         # 🎯 STAGE 3: Get patient details
         if context["booking_stage"] == "datetime_selected":
+            print("➡️ STAGE 3: Getting patient details")
             prompt = f"""You are Anna confirming appointment details.
 
 Patient has selected a date and time.
@@ -234,7 +294,7 @@ Keep response to 2 sentences."""
         
         # 🎯 STAGE 4: Confirm booking
         if context["booking_stage"] == "ready_to_confirm":
-            # Create booking
+            print("➡️ STAGE 4: Confirming booking")
             booking = self.create_booking(
                 session_id=session_id,
                 service_id=session.extracted_info["service_id"],
@@ -258,13 +318,31 @@ Keep response to 2-3 sentences."""
             response = await self.llm.generate(prompt, max_tokens=150)
             return response
         
-        # Default: Guide toward service selection
-        prompt = f"""You are Anna, a medical clinic receptionist.
+        # Default: If they want to book but services not suggested yet
+        if context["wants_to_book"] and not context["already_discussed"]["services_suggested"]:
+            print("➡️ DEFAULT: Asking what service they need")
+            prompt = f"""You are Anna, a medical clinic receptionist.
 
 Patient says: "{user_input}"
 
-Ask what type of service they need or what symptoms they're experiencing.
-Be warm and helpful. Keep response to 2 sentences."""
+Ask what type of service or specialist they need.
+Keep response to 1-2 sentences."""
+            
+            response = await self.llm.generate(prompt, max_tokens=150)
+            return response
+        
+        # Absolute fallback
+        print("⚠️ FALLBACK: Using generic booking response")
+        prompt = f"""You are Anna.
+
+Patient says: "{user_input}"
+
+Conversation so far:
+{context['conversation_history']}
+
+Respond naturally based on where they are in the conversation.
+DO NOT repeat information already discussed.
+Keep response to 2 sentences."""
         
         response = await self.llm.generate(prompt, max_tokens=150)
         print(f"   ✅ Booking handler complete")
