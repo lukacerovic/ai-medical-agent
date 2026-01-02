@@ -1,0 +1,5 @@
+# Data directory for JSON storage
+# Contains:
+# - services.json: Available medical services
+# - availability.json: Appointment slot availability
+# - bookings.json: Confirmed appointments

@@ -1,0 +1,41 @@
+# Medical Clinic Tasks Configuration
+
+reception_task:
+  description: >
+    Welcome the patient and provide initial assistance.
+    Greet warmly, acknowledge concerns with empathy,
+    and prepare to delegate to appropriate specialists.
+  expected_output: >
+    A warm, professional response that acknowledges the patient's
+    concerns and either answers their question or indicates next steps
+
+symptoms_analysis_task:
+  description: >
+    Analyze patient symptoms and recommend appropriate medical services.
+    Review symptoms carefully, ask follow-up questions if needed,
+    use service_lookup tool to find matching services,
+    and provide clear medical guidance with service details.
+  expected_output: >
+    A detailed analysis of symptoms with specific service recommendations,
+    including service names, prices, durations, and clear explanations of why
+    each service is appropriate for the patient's condition
+
+booking_task:
+  description: >
+    Manage the appointment booking process.
+    Check service selection, show available slots,
+    collect patient information (name, DOB),
+    verify all details, and create confirmed booking.
+  expected_output: >
+    A complete booking confirmation with all details: patient name,
+    date of birth, service name, appointment date and time, price,
+    duration, and booking ID. Include instructions for the patient.
+
+information_query_task:
+  description: >
+    Answer general inquiries about clinic services.
+    Handle questions about hours, pricing, services overview,
+    insurance, and preparation instructions.
+  expected_output: >
+    A clear, informative response that addresses the patient's
+    question and provides any relevant additional context
