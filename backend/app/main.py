@@ -20,7 +20,6 @@ app.add_middleware(
 )
 
 # Include routers
-# Include routers
 app.include_router(voice.router, prefix="/api", tags=["Voice"])
 app.include_router(services.router, prefix="/api", tags=["Services"])
 app.include_router(booking.router, prefix="/api", tags=["Booking"])
@@ -29,22 +28,34 @@ app.include_router(chat.router, prefix="/api", tags=["Chat"])
 
 @app.on_event("startup")
 async def startup_event():
+    print("\n" + "="*80)
     print("🚀 MedCare Clinic AI Backend Started")
-    print("✓ Mistral LLM configured")
-    print("✓ Whisper STT ready")
-    print("✓ TTS engine initialized")
+    print("="*80)
+    print("✅ Mistral LLM configured")
+    print("✅ Whisper STT ready")
+    print("✅ TTS engine initialized")
+    print("✅ CORS enabled for all origins")
+    print(f"🌍 API running on: http://localhost:8000")
+    print(f"📝 Docs available at: http://localhost:8000/docs")
+    print("="*80 + "\n")
 
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
-    return {"status": "healthy"}
+    print("❤️ Health check pinged")
+    return {"status": "healthy", "message": "Backend is running"}
 
 @app.get("/session/new")
 async def create_new_session():
     """Create a new conversation session"""
+    print("\n" + "-"*80)
+    print("🆕 NEW SESSION REQUEST")
+    print("-"*80)
     try:
         session_id = memory.create_session()
-        print(f"✓ Session created: {session_id}")
+        print(f"✅ Session created successfully: {session_id}")
+        print(f"💾 Session stored in memory")
+        print("-"*80 + "\n")
         return {
             "session_id": session_id,
             "status": "created"
@@ -53,6 +64,7 @@ async def create_new_session():
         print(f"❌ Session creation error: {e}")
         import traceback
         traceback.print_exc()
+        print("-"*80 + "\n")
         return {
             "error": str(e),
             "status": "failed"
@@ -65,6 +77,7 @@ async def root():
     return {
         "name": "MedCare Clinic AI",
         "version": "1.0.0",
+        "status": "running",
         "endpoints": {
             "websocket": "ws://localhost:8000/ws/{session_id}",
             "rest": {
